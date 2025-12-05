@@ -34,6 +34,17 @@ def load_audio_file(filepath: str, sr: Optional[int] = 22050) -> Tuple[np.ndarra
     if ext not in supported_formats:
         raise ValueError(f"Unsupported audio format: {ext}. Supported: {supported_formats}")
     
+    # Try to use librosa first (best quality)
+    try:
+        import librosa
+        audio_data, file_sr = librosa.load(filepath, sr=sr, mono=True)
+        return audio_data.astype(np.float32), sr if sr else file_sr
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    
+    # Fallback to soundfile
     try:
         import soundfile as sf
         audio_data, file_sr = sf.read(filepath)
@@ -52,7 +63,7 @@ def load_audio_file(filepath: str, sr: Optional[int] = 22050) -> Tuple[np.ndarra
         # Fallback for basic WAV support without soundfile
         if ext == ".wav":
             return _load_wav_basic(filepath, sr)
-        raise ImportError("soundfile library required for non-WAV formats")
+        raise ImportError("soundfile or librosa library required for non-WAV formats")
 
 
 def _load_wav_basic(filepath: str, target_sr: Optional[int]) -> Tuple[np.ndarray, int]:
@@ -134,15 +145,16 @@ def resample_audio(audio_data: np.ndarray, orig_sr: int, target_sr: int) -> np.n
     if orig_sr == target_sr:
         return audio_data
     
-    # Calculate new length
-    duration = len(audio_data) / orig_sr
-    new_length = int(duration * target_sr)
-    
-    # Use linear interpolation for resampling
-    x_old = np.linspace(0, duration, len(audio_data))
-    x_new = np.linspace(0, duration, new_length)
-    
-    return np.interp(x_new, x_old, audio_data)
+    try:
+        import librosa
+        return librosa.resample(audio_data, orig_sr=orig_sr, target_sr=target_sr)
+    except ImportError:
+        # Fallback to basic interpolation if librosa not available
+        duration = len(audio_data) / orig_sr
+        new_length = int(duration * target_sr)
+        x_old = np.linspace(0, duration, len(audio_data))
+        x_new = np.linspace(0, duration, new_length)
+        return np.interp(x_new, x_old, audio_data)
 
 
 def normalize_audio(audio_data: np.ndarray, target_level: float = 0.9) -> np.ndarray:
